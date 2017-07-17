@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	version   = "0.2.5"
+	version   = "0.2.6"
 	pluginTyp = qtypes.COLLECTOR
 	pluginPkg = "docker-events"
 	dockerAPI = "v1.29"
