@@ -11,6 +11,9 @@ import (
 	"github.com/qnib/qframe-types"
 	"strings"
 	"time"
+	"github.com/qframe/types/messages"
+	"github.com/qframe/types/docker-events"
+	"github.com/docker/docker/api/types/swarm"
 )
 
 const (
@@ -67,15 +70,14 @@ func (p *Plugin) Run() {
 	for {
 		select {
 		case dMsg := <-msgs:
-			base := qtypes.NewTimedBase(p.Name, time.Unix(dMsg.Time, 0))
-			if dMsg.Type == "container" {
-				data := map[string]string{"args": ""}
+			base := qtypes_messages.NewTimedBase(p.Name, time.Unix(dMsg.Time, 0))
+			switch dMsg.Type {
+			case "container":
 				if strings.HasPrefix(dMsg.Action, "exec_") {
 					exec := strings.Split(dMsg.Action, ":")
 					dMsg.Action = exec[0]
-					data["args"] = strings.Join(exec[1:], " ")
 				}
-				data["action"] = dMsg.Action
+				de := qtypes_docker_events.NewDockerEvent(base, dMsg)
 				cnt, err := inv.GetItem(dMsg.Actor.ID)
 				if err != nil {
 					switch dMsg.Action {
@@ -91,11 +93,8 @@ func (p *Plugin) Run() {
 							continue
 						}
 						inv.SetItem(dMsg.Actor.ID, cnt)
-						ce := qtypes.NewContainerEvent(base, cnt, dMsg, p.info)
-						for k, v := range data {
-							ce.Data[k] = v
-						}
-						ce.Message = fmt.Sprintf("%s: %s.%s %v", dMsg.Actor.Attributes["name"], dMsg.Type, dMsg.Action, data)
+						ce := qtypes_docker_events.NewContainerEvent(de, cnt)
+						ce.Message = fmt.Sprintf("%s: %s.%s", dMsg.Actor.Attributes["name"], dMsg.Type, dMsg.Action)
 						p.Log("debug", fmt.Sprintf("Just started container %s: SetItem(%s)", cnt.Name, cnt.ID))
 						p.QChan.Data.Send(ce)
 						continue
@@ -108,14 +107,19 @@ func (p *Plugin) Run() {
 					p.Log("error", msg)
 					continue
 				}
-				ce := qtypes.NewContainerEvent(base, cnt, dMsg, p.info)
-				for k, v := range data {
-					ce.Data[k] = v
-				}
-				ce.Message = fmt.Sprintf("%s: %s.%s %v", dMsg.Actor.Attributes["name"], dMsg.Type, dMsg.Action, data)
+				ce := qtypes_docker_events.NewContainerEvent(de, cnt)
+				ce.Message = fmt.Sprintf("%s: %s.%s", dMsg.Actor.Attributes["name"], dMsg.Type, dMsg.Action)
 				p.Log("debug", fmt.Sprintf("Just started container %s: SetItem(%s)", cnt.Name, cnt.ID))
 				p.QChan.Data.Send(ce)
 				continue
+			case "service":
+				de := qtypes_docker_events.NewDockerEvent(base, dMsg)
+				switch dMsg.Action {
+				case "create","update","remove":
+					srv := swarm.Service{ID: dMsg.Actor.ID}
+					se := qtypes_docker_events.NewServiceEvent(de, srv)
+					p.QChan.Data.Send(se)
+				}
 			}
 		case dErr := <-errs:
 			if dErr != nil {
