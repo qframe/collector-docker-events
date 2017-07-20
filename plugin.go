@@ -77,6 +77,11 @@ func (p *Plugin) Run() {
 					exec := strings.Split(dMsg.Action, ":")
 					dMsg.Action = exec[0]
 				}
+				if strings.HasPrefix(dMsg.Action, "health_status") {
+					exec := strings.Split(dMsg.Action, ":")
+					dMsg.Action = exec[0]
+					dMsg.Actor.Attributes["status"] = exec[1]
+				}
 				de := qtypes_docker_events.NewDockerEvent(base, dMsg)
 				cnt, err := inv.GetItem(dMsg.Actor.ID)
 				if err != nil {
