@@ -2,37 +2,40 @@ package qcollector_docker_events
 
 import (
 	"fmt"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/client"
-	"github.com/zpatrick/go-config"
-	"golang.org/x/net/context"
-
-	"github.com/qframe/cache-inventory"
-	"github.com/qnib/qframe-types"
 	"strings"
 	"time"
+	"github.com/moby/moby/api/types"
+	"github.com/moby/moby/client"
+	"github.com/moby/moby/api/types/swarm"
+	"golang.org/x/net/context"
 	"github.com/qframe/types/messages"
 	"github.com/qframe/types/docker-events"
-	"github.com/docker/docker/api/types/swarm"
+	"github.com/qframe/types/plugin"
+	"github.com/qframe/types/constants"
+	"github.com/qframe/types/qchannel"
+	"github.com/zpatrick/go-config"
+	"github.com/qframe/types/interfaces"
 )
 
 const (
 	version   = "0.2.6"
-	pluginTyp = qtypes.COLLECTOR
+	pluginTyp = qtypes_constants.COLLECTOR
 	pluginPkg = "docker-events"
-	dockerAPI = "v1.29"
+	dockerAPI = "v1.30"
 )
 
 type Plugin struct {
-	qtypes.Plugin
+	*qtypes_plugin.Plugin
 	engCli *client.Client
 	info types.Info
+	Inventory qtypes_interfaces.ContainerInventory
 }
 
-func New(qChan qtypes.QChan, cfg *config.Config, name string) (Plugin, error) {
+func New(qChan qtypes_qchannel.QChan, inv qtypes_interfaces.ContainerInventory, cfg *config.Config, name string) (Plugin, error) {
 	var err error
 	p := Plugin{
-		Plugin: qtypes.NewNamedPlugin(qChan, cfg, pluginTyp, pluginPkg, name, version),
+		Plugin: qtypes_plugin.NewNamedPlugin(qChan, cfg, pluginTyp, pluginPkg, name, version),
+		Inventory: inv,
 	}
 	return p, err
 }
@@ -55,7 +58,7 @@ func (p *Plugin) Run() {
 		p.Log("info", fmt.Sprintf("Connected to '%s' / v'%s'", p.info.Name, p.info.ServerVersion))
 	}
 	// Inventory Init
-	inv := qcache_inventory.NewInventory()
+	inv := NewInventory()
 	// Fire events for already started containers
 	cnts, _ := engineCli.ContainerList(ctx, types.ContainerListOptions{})
 	for _, cnt := range cnts {
