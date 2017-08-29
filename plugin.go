@@ -7,32 +7,36 @@ import (
 	"github.com/zpatrick/go-config"
 	"golang.org/x/net/context"
 
-	"github.com/qframe/cache-inventory"
-	"github.com/qnib/qframe-types"
 	"strings"
 	"time"
 	"github.com/qframe/types/messages"
 	"github.com/qframe/types/docker-events"
 	"github.com/docker/docker/api/types/swarm"
+	"github.com/qframe/types/constants"
+	"github.com/qframe/types/qchannel"
+	"github.com/qframe/types/plugin"
+	"sync"
 )
 
 const (
 	version   = "0.2.6"
-	pluginTyp = qtypes.COLLECTOR
+	pluginTyp = qtypes_constants.COLLECTOR
 	pluginPkg = "docker-events"
 	dockerAPI = "v1.29"
 )
 
 type Plugin struct {
-	qtypes.Plugin
+	*qtypes_plugin.Plugin
 	engCli *client.Client
 	info types.Info
+	inventory sync.Map
 }
 
-func New(qChan qtypes.QChan, cfg *config.Config, name string) (Plugin, error) {
+func New(qChan qtypes_qchannel.QChan, cfg *config.Config, name string) (Plugin, error) {
 	var err error
 	p := Plugin{
-		Plugin: qtypes.NewNamedPlugin(qChan, cfg, pluginTyp, pluginPkg, name, version),
+		Plugin: qtypes_plugin.NewNamedPlugin(qChan, cfg, pluginTyp, pluginPkg, name, version),
+		inventory: sync.Map{},
 	}
 	return p, err
 }
@@ -54,8 +58,6 @@ func (p *Plugin) Run() {
 	} else {
 		p.Log("info", fmt.Sprintf("Connected to '%s' / v'%s'", p.info.Name, p.info.ServerVersion))
 	}
-	// Inventory Init
-	inv := qcache_inventory.NewInventory()
 	// Fire events for already started containers
 	cnts, _ := engineCli.ContainerList(ctx, types.ContainerListOptions{})
 	for _, cnt := range cnts {
@@ -63,8 +65,8 @@ func (p *Plugin) Run() {
 		if err != nil {
 			continue
 		}
-		p.Log("debug", fmt.Sprintf("Already running container %s: SetItem(%s)", cJson.Name, cJson.ID))
-		inv.SetItem(cnt.ID, cJson)
+		p.Log("trace", fmt.Sprintf("Already running container %s: SetItem(%s)", cJson.Name, cJson.ID))
+		p.inventory.Store(cnt.ID, cJson)
 	}
 	msgs, errs := engineCli.Events(context.Background(), types.EventsOptions{})
 	for {
@@ -83,8 +85,8 @@ func (p *Plugin) Run() {
 					dMsg.Actor.Attributes["status"] = exec[1]
 				}
 				de := qtypes_docker_events.NewDockerEvent(base, dMsg)
-				cnt, err := inv.GetItem(dMsg.Actor.ID)
-				if err != nil {
+				cntVal, ok := p.inventory.Load(dMsg.Actor.ID)
+				if !ok {
 					switch dMsg.Action {
 					case "die", "destroy":
 						p.Log("debug", fmt.Sprintf("Container %s just '%s' without having an entry in the Inventory", dMsg.Actor.ID, dMsg.Action))
@@ -97,24 +99,26 @@ func (p *Plugin) Run() {
 							p.Log("error", fmt.Sprintf("Could not inspect '%s'", dMsg.Actor.ID))
 							continue
 						}
-						inv.SetItem(dMsg.Actor.ID, cnt)
+						p.inventory.Store(dMsg.Actor.ID, cnt)
 						ce := qtypes_docker_events.NewContainerEvent(de, cnt)
 						ce.Message = fmt.Sprintf("%s: %s.%s", dMsg.Actor.Attributes["name"], dMsg.Type, dMsg.Action)
-						p.Log("debug", fmt.Sprintf("Just started container %s: SetItem(%s)", cnt.Name, cnt.ID))
+						p.Log("trace", fmt.Sprintf("Just started container %s: SetItem(%s)", cnt.Name, cnt.ID))
 						p.QChan.Data.Send(ce)
 						continue
+					default:
+						p.Log("info", "WTF?")
 					}
 				}
-
-				p.Log("debug", fmt.Sprintf("Container '%s' was found in the inventory...", dMsg.Actor.Attributes["name"]))
-				if err != nil {
-					msg := fmt.Sprintf("Could not find container '%s' in invntory while it is doing '%s.%s'", dMsg.Actor.ID, dMsg.Type, dMsg.Action)
-					p.Log("error", msg)
+				p.Log("trace", fmt.Sprintf("Container '%s' was found in the inventory...", dMsg.Actor.Attributes["name"]))
+				cntVal, ok = p.inventory.Load(dMsg.Actor.ID)
+				if !ok {
+					p.Log("warn", fmt.Sprintf("Still not able to find containerID '%s'", dMsg.Actor.ID))
 					continue
 				}
+				cnt := cntVal.(types.ContainerJSON)
 				ce := qtypes_docker_events.NewContainerEvent(de, cnt)
 				ce.Message = fmt.Sprintf("%s: %s.%s", dMsg.Actor.Attributes["name"], dMsg.Type, dMsg.Action)
-				p.Log("debug", fmt.Sprintf("Just started container %s: SetItem(%s)", cnt.Name, cnt.ID))
+				p.Log("trace", fmt.Sprintf("Just started container %s: SetItem(%s)", cnt.Name, cnt.ID))
 				p.QChan.Data.Send(ce)
 				continue
 			case "service":

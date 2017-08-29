@@ -4,11 +4,11 @@ import (
 	"time"
 	"crypto/sha1"
 	"fmt"
-	"github.com/qnib/qframe-types"
+	"github.com/qframe/types/plugin"
 )
 
 const (
-	version = "0.1.2"
+	version = "0.1.3"
 )
 
 type Base struct {
@@ -50,17 +50,6 @@ func NewBaseFromBase(src string, b Base) Base {
 	}
 }
 
-func NewBaseFromOldBase(src string, b qtypes.Base) Base {
-	return Base {
-		BaseVersion: b.BaseVersion,
-		ID: b.ID,
-		Time: b.Time,
-		SourceID: b.SourceID,
-		SourcePath: append(b.SourcePath, src),
-		SourceSuccess: b.SourceSuccess,
-		Tags: b.Data,
-	}
-}
 
 func (b *Base) ToJSON() map[string]interface{} {
 	res := map[string]interface{}{
@@ -128,7 +117,7 @@ func Sha1HashString(s string) string {
 }
 
 
-func (b *Base) StopProcessing(p qtypes.Plugin, allowEmptyInput bool) bool {
+func (b *Base) StopProcessing(p *qtypes_plugin.Plugin, allowEmptyInput bool) bool {
 	if b.SourceID != 0 && p.MyID == b.SourceID {
 		msg := fmt.Sprintf("Msg came from the same GID (My:%d == %d:SourceID)", p.MyID, b.SourceID)
 		p.Log("debug", msg)
