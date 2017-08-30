@@ -16,6 +16,7 @@ import (
 	"github.com/qframe/types/qchannel"
 	"github.com/qframe/types/plugin"
 	"sync"
+	"github.com/docker/docker/api/types/events"
 )
 
 const (
@@ -65,8 +66,18 @@ func (p *Plugin) Run() {
 		if err != nil {
 			continue
 		}
+		base := qtypes_messages.NewTimedBase(p.Name, time.Unix(cnt.Created, 0))
+		newEvent := events.Message{
+			Time: cnt.Created,
+			ID: cJson.ID,
+			Type: "container",
+			Action: "start",
+		}
+		de := qtypes_docker_events.NewDockerEvent(base, newEvent)
 		p.Log("trace", fmt.Sprintf("Already running container %s: SetItem(%s)", cJson.Name, cJson.ID))
 		p.inventory.Store(cnt.ID, cJson)
+		ce := qtypes_docker_events.NewContainerEvent(de, cJson)
+		p.QChan.SendData(ce)
 	}
 	msgs, errs := engineCli.Events(context.Background(), types.EventsOptions{})
 	for {
