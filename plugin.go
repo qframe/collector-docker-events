@@ -46,6 +46,7 @@ func (p *Plugin) Run() {
 	p.Log("notice", fmt.Sprintf("Start docker-events collector v%s", p.Version))
 	ctx := context.Background()
 	dockerHost := p.CfgStringOr("docker-host", "unix:///var/run/docker.sock")
+	ignoreActions := strings.Split(p.CfgStringOr("ignore-actions", "exec_create,exec_start"), ",")
 	// Filter start/stop event of a container
 	engineCli, err := client.NewClient(dockerHost, dockerAPI, nil, nil)
 	if err != nil {
@@ -86,6 +87,7 @@ func (p *Plugin) Run() {
 			base := qtypes_messages.NewTimedBase(p.Name, time.Unix(dMsg.Time, 0))
 			switch dMsg.Type {
 			case "container":
+				p.Log("trace", dMsg.Action)
 				if strings.HasPrefix(dMsg.Action, "exec_") {
 					exec := strings.Split(dMsg.Action, ":")
 					dMsg.Action = exec[0]
@@ -98,6 +100,15 @@ func (p *Plugin) Run() {
 				de := qtypes_docker_events.NewDockerEvent(base, dMsg)
 				cntVal, ok := p.inventory.Load(dMsg.Actor.ID)
 				if !ok {
+					skipAction := false
+					for _, ignAct := range ignoreActions {
+						if dMsg.Action == ignAct {
+							skipAction = true
+						}
+					}
+					if skipAction {
+						continue
+					}
 					switch dMsg.Action {
 					case "die", "destroy":
 						p.Log("debug", fmt.Sprintf("Container %s just '%s' without having an entry in the Inventory", dMsg.Actor.ID, dMsg.Action))
