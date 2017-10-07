@@ -9,10 +9,12 @@ import (
 	"github.com/qframe/types/constants"
 	"github.com/qframe/types/messages"
 	"reflect"
+	"github.com/qframe/cache-inventory"
+	"strings"
 )
 
 const (
-	version   = "0.1.5"
+	version   = "0.2.0"
 	pluginTyp = qtypes_constants.HANDLER
 	pluginPkg = "log"
 )
@@ -40,8 +42,12 @@ func (p *Plugin) Run() {
 			switch val.(type) {
 			case qtypes_messages.Message:
 				qm := val.(qtypes_messages.Message)
-				qm.StopProcessing(p.Plugin, false)
-				p.Log("info" , fmt.Sprintln(qm.ToJSON()))
+				if qm.StopProcessing(p.Plugin, false) {
+					continue
+				}
+				p.Log("info" , fmt.Sprintf("%-15s : %s", strings.Join(qm.SourcePath, "->"), qm.Message))
+			case qcache_inventory.ContainerRequest:
+				continue
 			default:
 				p.Log("info", fmt.Sprintf("Dunno type '%s': %v", reflect.TypeOf(val), val))
 			}
