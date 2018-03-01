@@ -65,7 +65,7 @@ func (de *DockerEvent) EventToFlatJSON() (res map[string]interface{}) {
 	res["msg_message"] = de.Message
 	res["event_type"] = de.Event.Type
 	res["event_action"] = de.Event.Action
-	res["event_scope"] = de.Event.Scope
+	//res["event_scope"] = de.Event.Scope
 	actAtr, err := qtypes_helper.PrefixFlatKV(de.Event.Actor.Attributes, res, "event_actor_attr")
 	if err == nil {
 		res = actAtr

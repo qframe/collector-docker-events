@@ -59,6 +59,10 @@ func (p *Plugin) Run() {
 		return
 	} else {
 		p.Log("info", fmt.Sprintf("Connected to '%s' / v'%s'", p.info.Name, p.info.ServerVersion))
+		base := qtypes_messages.NewTimedBase(p.Name, time.Now())
+		nodeE := qtypes_docker_events.NewDockerEvent(base, p.info, events.Message{Type: "engine", Action: "connected"})
+		p.QChan.SendData(nodeE)
+
 	}
 	// Fire events for already started containers
 	cnts, _ := engineCli.ContainerList(ctx, types.ContainerListOptions{})
@@ -72,7 +76,7 @@ func (p *Plugin) Run() {
 			Time: cnt.Created,
 			ID: cJson.ID,
 			Type: "container",
-			Action: "start",
+			Action: "running",
 		}
 		de := qtypes_docker_events.NewDockerEvent(base, p.info, newEvent)
 		p.Log("trace", fmt.Sprintf("Already running container %s: SetItem(%s)", cJson.Name, cJson.ID))
@@ -159,7 +163,24 @@ func (p *Plugin) Run() {
 					se := qtypes_docker_events.NewServiceEvent(de, srv)
 					p.QChan.Data.Send(se)
 				}
+			case "network":
+				de := qtypes_docker_events.NewDockerEvent(base, p.info, dMsg)
+				switch dMsg.Action {
+				case "create","update":
+					net, _, err := engineCli.NetworkInspectWithRaw(ctx, dMsg.Actor.ID, types.NetworkInspectOptions{})
+					if err != nil {
+						p.Log("error", fmt.Sprintf("Failed to inspect network '%s': %s", dMsg.Actor.ID, err.Error()))
+						continue
+					}
+					ne := qtypes_docker_events.NewNetworkEvent(de, net)
+					p.QChan.Data.Send(ne)
+				case "remove":
+					net := types.NetworkResource{ID: dMsg.Actor.ID}
+					ne := qtypes_docker_events.NewNetworkEvent(de, net)
+					p.QChan.Data.Send(ne)
+				}
 			}
+
 		case dErr := <-errs:
 			if dErr != nil {
 				p.Log("error", dErr.Error())
